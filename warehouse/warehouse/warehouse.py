@@ -28,6 +28,7 @@ with open(DEFAULT_CONF_PATH, 'r') as instream:
 DEFAULT_WAREHOUSE_PATH = warehouse_conf['DEFAULT_WAREHOUSE_PATH']
 DEFAULT_PUBLICATION_PATH = warehouse_conf['DEFAULT_PUBLICATION_PATH']
 DEFAULT_ARCHIVE_PATH = warehouse_conf['DEFAULT_ARCHIVE_PATH']
+DEFAULT_STATUS_PATH = warehouse_conf['DEFAULT_STATUS_PATH']
 NAME = 'auto'
 
 
@@ -42,7 +43,10 @@ class AutoWarehouse():
             'publication_path', DEFAULT_PUBLICATION_PATH))
         self.archive_path = Path(kwargs.get(
             'archive_path', DEFAULT_ARCHIVE_PATH))
-        self.spec_path = Path(kwargs.get('spec_path', DEFAULT_SPEC_PATH))
+        self.status_path = Path(kwargs.get(
+            'status_path', DEFAULT_STATUS_PATH))
+        self.spec_path = Path(kwargs.get(
+            'spec_path', DEFAULT_SPEC_PATH))
         self.sproket_path = kwargs.get('sproket', 'sproket')
         self.num_workers = kwargs.get('num', 8)
         self.serial = kwargs.get('serial', False)
@@ -107,7 +111,7 @@ class AutoWarehouse():
 
             # wait around while jobs run
             while True:
-                if should_exit:
+                if self.should_exit:
                     sys.exit(0)
                 sleep(10)
 
@@ -163,6 +167,7 @@ class AutoWarehouse():
         self.datasets = {
             dataset_id: Dataset(
                 dataset_id,
+                status_path=os.path.join(self.status_path, f"{dataset_id}.status"),
                 pub_base=self.publication_path,
                 warehouse_base=self.warehouse_path,
                 archive_base=self.archive_path,
@@ -375,11 +380,11 @@ class AutoWarehouse():
 
     def start_listener(self):
         self.listener = []
-        for dataset_id, dataset in self.datasets.items():
-            print(f"starting listener for {dataset.warehouse_path}")
+        for _, dataset in self.datasets.items():
+            print(f"starting listener for {dataset.status_path}")
             listener = Listener(
                 warehouse=self,
-                root=dataset.warehouse_path)
+                file_path=dataset.status_path)
             listener.start()
             self.listener.append(listener)
         cprint("Listener setup complete", "green")
@@ -474,6 +479,10 @@ class AutoWarehouse():
             '--dataset-spec',
             default=DEFAULT_SPEC_PATH,
             help=f'The path to the dataset specification yaml file, default={DEFAULT_SPEC_PATH}')
+        p.add_argument(
+            '--status-path',
+            default=DEFAULT_STATUS_PATH,
+            help=f'The path to where to store dataset status files, default={DEFAULT_STATUS_PATH}')
         p.add_argument(
             '--job-workers',
             type=int,

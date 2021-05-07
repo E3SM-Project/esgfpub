@@ -60,8 +60,10 @@ class Dataset(object):
         ...
 
     def initialize_status_file(self):
+
         if not self.status_path.exists():
             self.status_path.touch(mode=0o755, exist_ok=True)
+
         found_id = False
         with open(self.status_path, 'r') as instream:
             for line in instream.readlines():
@@ -72,29 +74,28 @@ class Dataset(object):
             with open(self.status_path, 'a') as outstream:
                 outstream.write(f'DATASETID={self.dataset_id}\n')
 
-        # import ipdb; ipdb.set_trace()
         if (status := get_last_status_line(self.status_path)):
-            self._status = f"{status.split(':')[-3]}:{status.split(':')[-2]}:"
+            status_attrs = status.split(':')
+            self._status = f"{status_attrs[-3]}:{status_attrs[-2]}:"
         else:
             self._status = DatasetStatus.UNITITIALIZED.name
 
-    def __init__(self, dataset_id, pub_base=None, warehouse_base=None, archive_base=None, start_year=None, end_year=None, datavars=None, path='', versions={}, stat=None, comm=None, *args, **kwargs):
+    def __init__(self, dataset_id, status_path, pub_base=None, warehouse_base=None, archive_base=None, start_year=None, end_year=None, datavars=None, path='', versions={}, stat=None, comm=None, *args, **kwargs):
         super().__init__()
         self.dataset_id = dataset_id
         self._status = DatasetStatus.UNITITIALIZED.name
 
-        # import ipdb; ipdb.set_trace()
         self.data_path = None
         self.start_year = start_year
         self.end_year = end_year
         self.datavars = datavars
         self.missing = None
         self._publication_path = Path(path) if path != '' else None
-        # import ipdb; ipdb.set_trace()
         self.pub_base = pub_base
         self.warehouse_path = Path(path) if path != '' else None
         self.warehouse_base = warehouse_base
         self.archive_path = Path(path) if path != '' else None
+        self.status_path = status_path
 
         self.archive_base = archive_base
         self.sproket = kwargs.get('sproket')
@@ -130,6 +131,7 @@ class Dataset(object):
                 self.warehouse_base,
                 self.project,
                 self.activity,
+                'E3SM-Project',
                 self.model_version,
                 self.experiment,
                 self.ensemble,
@@ -159,10 +161,6 @@ class Dataset(object):
                 self.freq,
                 self.ensemble)
 
-        self.status_path = Path(self.warehouse_path, '.status')
-        if not self.status_path.exists():
-            self.status_path.touch()
-
         self.initialize_status_file()
 
     def update_from_status_file(self):
@@ -183,16 +181,20 @@ class Dataset(object):
         # we assume that the warehouse directory contains only directories named "v0.#" or "v#"
         try:
             latest_version = sorted([float(str(x.name)[1:]) for x in self.warehouse_path.iterdir(
-            ) if x.is_dir() and any(x.iterdir())]).pop()
+            ) if x.is_dir() and any(x.iterdir()) and 'tmp' not in x.name]).pop()
         except IndexError:
             latest_version = 0
 
-        if latest_version.is_integer():
+        if not isinstance(latest_version, int) and latest_version.is_integer():
             latest_version = int(latest_version)
 
         if latest_version < 0.1:
             latest_version = 0
-        return str(Path(self.warehouse_path, f"v{latest_version}").resolve())
+        
+        path_to_latest = Path(self.warehouse_path, f"v{latest_version}").resolve()
+        if not path_to_latest.exists():
+            path_to_latest.mkdir(parents=True)
+        return str(path_to_latest)
 
     @property
     def latest_pub_dir(self):
@@ -392,39 +394,11 @@ class Dataset(object):
             return DatasetStatus.PARTIAL_PUBLISHED
 
     def get_status_from_pub_dir(self):
-        if self.project == 'CMIP6':
-            pubpath = Path(
-                self.pub_base,
-                self.project,
-                self.activity,
-                self.model_version,
-                self.experiment,
-                self.ensemble,
-                self.table,
-                self.grid)
-        else:
-            pubpath = Path(
-                self.pub_base,
-                self.project,
-                self.model_version,
-                self.experiment,
-                self.resolution,
-                self.realm,
-                self.grid,
-                self.data_type,
-                self.freq,
-                self.ensemble)
 
-        self._publication_path = pubpath
         if not self.publication_path.exists():
             return DatasetStatus.NOT_IN_PUBLICATION
 
         self.update_versions(self.publication_path)
-
-        statfile = Path(self.publication_path, '.status')
-        if statfile.exists():
-            self.status_path = statfile
-            self.load_dataset_status_file(statfile)
 
         version_names = list(self.versions.keys())
         version_dir = Path(self.publication_path, version_names[-1])
@@ -436,8 +410,6 @@ class Dataset(object):
         if is_complete:
             # we only set the status file if the publication is complete
             # otherwise the "official" location should be the warehouse
-            self.status_path = statfile
-            self.data_path = self.publication_path
             self.status = DatasetStatusMessage.PUBLICATION_READY.value
 
             return DatasetStatus.IN_PUBLICATION
@@ -451,41 +423,11 @@ class Dataset(object):
         }
 
     def get_status_from_warehouse(self):
-        if self.project == 'CMIP6':
-            warepath = Path(
-                self.warehouse_base,
-                self.project,
-                self.activity,
-                self.model_version,
-                self.experiment,
-                self.ensemble,
-                self.table,
-                self.grid)
-        else:
-            warepath = Path(
-                self.warehouse_base,
-                self.project,
-                self.model_version,
-                self.experiment,
-                self.resolution,
-                self.realm,
-                self.grid,
-                self.data_type,
-                self.freq,
-                self.ensemble)
-        self.warehouse_path = warepath
+        
         if not self.warehouse_path.exists():
             return DatasetStatus.NOT_IN_WAREHOUSE
 
         self.update_versions(self.warehouse_path)
-
-        statfile = Path(self.warehouse_path, '.status')
-        if statfile.exists():
-            self.status_path = statfile
-            self.load_dataset_status_file(statfile)
-            status = self.get_latest_status()
-            self.data_path = self.warehouse_path
-            return status
 
         version_names = list(self.versions.keys())
         version_dir = Path(self.publication_path, version_names[-1])
@@ -494,7 +436,6 @@ class Dataset(object):
             return DatasetStatus.NOT_IN_WAREHOUSE
         else:
             if self.check_dataset_is_complete(files):
-                self.data_path = self.warehouse_path
                 return DatasetStatus.IN_WAREHOUSE
             else:
                 return DatasetStatus.NOT_IN_WAREHOUSE
@@ -503,9 +444,6 @@ class Dataset(object):
         """
         Lookup the datasets status in ESGF, or on the filesystem
         """
-        if self.status_path.exists():
-            self.load_dataset_status_file()
-            self.status = self.get_latest_status()
 
         # if the dataset is UNITITIALIZED, then we need to build up the status from scratch
         if self.status == DatasetStatus.UNITITIALIZED:

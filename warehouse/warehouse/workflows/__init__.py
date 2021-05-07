@@ -19,6 +19,7 @@ with open(DEFAULT_CONF_PATH, 'r') as instream:
 DEFAULT_WAREHOUSE_PATH = warehouse_conf['DEFAULT_WAREHOUSE_PATH']
 DEFAULT_PUBLICATION_PATH = warehouse_conf['DEFAULT_PUBLICATION_PATH']
 DEFAULT_ARCHIVE_PATH = warehouse_conf['DEFAULT_ARCHIVE_PATH']
+DEFAULT_STATUS_PATH = warehouse_conf['DEFAULT_STATUS_PATH']
 
 NAME = 'Warehouse'
 
@@ -217,6 +218,10 @@ class Workflow(object):
             '-a', '--archive-path',
             default=DEFAULT_ARCHIVE_PATH,
             help=f"The root path for the data archive, default={DEFAULT_ARCHIVE_PATH}")
+        parser.add_argument(
+            '--status-path',
+            default=DEFAULT_STATUS_PATH,
+            help=f'The path to where to store dataset status files, default={DEFAULT_STATUS_PATH}')
         parser.add_argument(
             '--debug',
             action='store_true',
